@@ -1,0 +1,27 @@
+{
+  "name": "jxjy-robot",
+  "version": "1.0.0",
+  "description": "自动继续教育学时挂机",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beanjs/jxjy-robot.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/beanjs/jxjy-robot/issues"
+  },
+  "homepage": "https://github.com/beanjs/jxjy-robot#readme",
+  "dependencies": {
+    "axios": "^1.4.0",
+    "dotenv": "^16.3.1",
+    "pino": "^8.14.2",
+    "pino-pretty": "^10.2.0",
+    "playwright": "^1.36.2"
+  }
+}
