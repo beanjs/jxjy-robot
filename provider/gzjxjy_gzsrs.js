@@ -123,7 +123,42 @@ class Provider {
 
   // 我的课程
   async _finCourse () {
-    return []
+    const finCrs = []
+    const page = await this.brower.pageMain()
+
+    await page
+      .locator('li[role="menuitem"]')
+      .filter({ hasText: '在线学习' })
+      .locator('li[role="menuitem"]')
+      .filter({ hasText: '我的课程' })
+      .click()
+    await this.brower.wait(1000)
+
+    const yearTabs = await page
+      .locator('div[class="yearTabs el-tabs el-tabs--card el-tabs--top"]')
+      .getByRole('tab')
+      .all()
+
+    for (const yearTab of yearTabs) {
+      await yearTab.click()
+      await this.brower.wait(2000)
+
+      // 进入已完成标签
+      await page.locator('div[id="tab-first"]').click()
+      await this.brower.wait(1000)
+      await page.locator('div[id="tab-second"]').click()
+      await this.brower.wait(1000)
+
+      const items = await page.locator('div[class="course-item"]').all()
+      for (const item of items) {
+        finCrs.push({
+          text: await item.locator('p').innerText(),
+          tab: await yearTab.innerText()
+        })
+      }
+    }
+
+    return finCrs
   }
 
   async _selCourse (cr) {
@@ -168,25 +203,37 @@ class Provider {
       .click()
 
     await this.brower.wait(2000)
-
     const video = await this.brower.pageVideo()
-    const list = await video
-      .locator('div[class="el-steps el-steps--vertical"] > div')
+
+    const fv = await video
+      .locator('div[class="el-step__title is-wait"]')
       .filter({ hasNot: video.locator('span[class="status-tip"]') })
       .all()
 
-    await this._playVideos(cr, list)
+    const nums = []
+    for (const i of fv) {
+      nums.push(await i.locator('span[class="step-num"]').innerText())
+    }
+
+    await this._playVideos(cr, nums)
     await video.close()
   }
 
-  async _playVideos (cr, ls) {
-    if (ls.length == 0) {
+  async _playVideos (cr, nums) {
+    if (nums.length == 0) {
       return
     }
 
-    const v = ls.shift()
+    const num = nums.shift()
+    const video = await this.brower.pageVideo()
+    const v = await video
+      .locator('div[class="el-step__title is-wait"]')
+      .filter({
+        has: video.locator('span[class="step-num"]').filter({ hasText: num })
+      })
+
     const vn = await v.locator('span[class="step-title"]').innerText()
-    log.info(`播放视频:${cr.tab}-${cr.text}-${vn}`)
+    log.info(`播放视频:(${num}) ${cr.tab}-${cr.text}-${vn} `)
     await v.click()
     await this.brower.wait(1000)
 
@@ -208,7 +255,7 @@ class Provider {
     // 等待视频结束
     await this._waitVideo(cr, vn)
     // 播放下一个视频
-    await this._playVideos(cr, ls)
+    await this._playVideos(cr, nums)
   }
 
   _waitVideo (cr, vn) {
@@ -252,12 +299,17 @@ class Provider {
   }
 
   async course () {
-    const netCrs = await this._netCourse()
     const finCrs = await this._finCourse()
+    const netCrs = await this._netCourse().then(crs => {
+      return crs.map(v => {
+        v.fin = !!finCrs.find(f => f.text == v.text && f.tab == v.tab)
 
-    return netCrs.filter(
-      n => !finCrs.find(f => f.text == n.text && f.tab == n.tab)
-    )
+        log.warn(`发现课程:(${v.fin ? '已完成' : '未完成'})${v.tab}-${v.text}`)
+        return v
+      })
+    })
+
+    return netCrs.filter(v => !v.fin)
   }
 
   async learn (crs) {
