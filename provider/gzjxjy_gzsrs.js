@@ -1,25 +1,10 @@
-const { webkit } = require('playwright')
-const { default: Pino } = require('pino')
-const { setTimeout: delayMs } = require('timers/promises')
-
+const { WebkitBrower } = require('./brower')
+const { log } = require('../logger')
 const captchaFactory = require('../captcha')
 
-const log = Pino({
-  transport: { target: 'pino-pretty' },
-  level: 'trace'
-})
-
-class Brower {
+class Brower extends WebkitBrower {
   constructor (opts) {
-    this.options = opts
-  }
-
-  async init () {
-    this.ins = await webkit.launch({ headless: true })
-    this.ctx = await this.ins.newContext()
-
-    const page = await this.ctx.newPage()
-    await page.goto(this.options.url)
+    super(opts)
   }
 
   async pageMain () {
@@ -45,10 +30,6 @@ class Brower {
     await page.setDefaultTimeout(5000)
     return page
   }
-
-  async pages () {
-    return this.ctx.pages()
-  }
 }
 
 class Provider {
@@ -68,7 +49,7 @@ class Provider {
 
     log.debug('进入【学习中心】')
     await page.locator('#userCenterName').click()
-    await delayMs(1000)
+    await this.brower.wait(1000)
 
     log.debug('填写用户名和密码')
     await page
@@ -82,7 +63,7 @@ class Provider {
     log.info('识别验证码并触发登陆')
     while (true) {
       try {
-        await delayMs(2000)
+        await this.brower.wait(2000)
         const capImg = await page.$eval(
           '.captcha',
           e => e.getAttribute('src').split(',')[1]
@@ -117,7 +98,7 @@ class Provider {
       .locator('li[role="menuitem"]')
       .filter({ hasText: '网络课程' })
       .click()
-    await delayMs(1000)
+    await this.brower.wait(1000)
 
     const yearTabs = await page
       .locator('div[class="yearTabs el-tabs el-tabs--card el-tabs--top"]')
@@ -126,7 +107,7 @@ class Provider {
 
     for (const yearTab of yearTabs) {
       await yearTab.click()
-      await delayMs(2000)
+      await this.brower.wait(2000)
 
       const items = await page.locator('div[class="course-item"]').all()
       for (const item of items) {
@@ -154,7 +135,7 @@ class Provider {
       .locator('li[role="menuitem"]')
       .filter({ hasText: '网络课程' })
       .click()
-    await delayMs(1000)
+    await this.brower.wait(1000)
 
     const yearTabs = await page
       .locator('div[class="yearTabs el-tabs el-tabs--card el-tabs--top"]')
@@ -163,7 +144,7 @@ class Provider {
 
     for (const yearTab of yearTabs) {
       await yearTab.click()
-      await delayMs(2000)
+      await this.brower.wait(2000)
 
       const items = await page.locator('div[class="course-item"]').all()
 
@@ -186,7 +167,7 @@ class Provider {
       .locator('button[class="el-button btn el-button--primary"]')
       .click()
 
-    await delayMs(2000)
+    await this.brower.wait(2000)
 
     const video = await this.brower.pageVideo()
     const list = await video
@@ -207,20 +188,20 @@ class Provider {
     const vn = await v.locator('span[class="step-title"]').innerText()
     log.info(`播放视频:${cr.tab}-${cr.text}-${vn}`)
     await v.click()
-    await delayMs(1000)
+    await this.brower.wait(1000)
 
     const page = await this.brower.pageVideo()
     await page.locator('button[class="vjs-big-play-button"]').click()
-    await delayMs(1000)
+    await this.brower.wait(1000)
     await page.locator('button[title="Mute"]').click()
-    await delayMs(1000)
+    await this.brower.wait(1000)
 
     log.info(`视频快进:秘密科技`)
     const ele = await page.locator(
       'div[class="vjs-progress-control vjs-control"]'
     )
     const bound = await ele.boundingBox()
-    const x = bound.x + bound.width - 60
+    const x = bound.x + bound.width - 40
     const y = bound.y + bound.height / 2
     await page.mouse.click(x, y, { button: 'left' })
 
@@ -232,10 +213,20 @@ class Provider {
 
   _waitVideo (cr, vn) {
     return new Promise((resolve, reject) => {
-      const tmr = setInterval(async () => {
+      const waitTimer = async () => {
         const page = await this.brower.pageVideo()
 
         try {
+          // 点击防挂机按钮
+          const puase = await page
+            .locator('button[class="el-button el-button--primary"]')
+            .click()
+            .then(() => true)
+            .catch(() => false)
+          if (puase) {
+            log.info('播放异常:处理[防挂机暂停]')
+          }
+
           const curTime = await page
             .locator('span[class="vjs-current-time-display"]')
             .innerHTML()
@@ -247,13 +238,16 @@ class Provider {
             `播放进度(${curTime}/${durTime}):${cr.tab}-${cr.text}-${vn}`
           )
           if (curTime == durTime) {
-            clearInterval(tmr)
-            resolve()
+            return resolve()
           }
         } catch (e) {
           reject(e)
         }
-      }, 10000)
+
+        setTimeout(waitTimer, 5000)
+      }
+
+      setTimeout(waitTimer, 5000)
     })
   }
 
