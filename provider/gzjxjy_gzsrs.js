@@ -10,10 +10,14 @@ class Brower extends WebkitBrower {
   async pageMain () {
     const page = this.ctx.pages().filter(p => {
       const url = p.url()
-      return url.includes(this.options.url) && !url.includes('learning')
+      return (
+        url.includes(this.options.url) &&
+        !url.includes('learning') &&
+        !url.includes('show-question')
+      )
     })[0]
 
-    if (!page) throw new Error('page main not fount')
+    if (!page) throw new Error('page main not found')
 
     await page.setDefaultTimeout(5000)
     return page
@@ -22,10 +26,30 @@ class Brower extends WebkitBrower {
   async pageVideo () {
     const page = this.ctx.pages().filter(p => {
       const url = p.url()
-      return url.includes(this.options.url) && url.includes('learning')
+      return (
+        url.includes(this.options.url) &&
+        url.includes('learning') &&
+        !url.includes('show-question')
+      )
     })[0]
 
-    if (!page) throw new Error('page video not fount')
+    if (!page) throw new Error('page video not found')
+
+    await page.setDefaultTimeout(5000)
+    return page
+  }
+
+  async pageExam () {
+    const page = this.ctx.pages().filter(p => {
+      const url = p.url()
+      return (
+        url.includes(this.options.url) &&
+        !url.includes('learning') &&
+        url.includes('show-question')
+      )
+    })[0]
+
+    if (!page) throw new Error('page exam not found')
 
     await page.setDefaultTimeout(5000)
     return page
@@ -298,6 +322,113 @@ class Provider {
     })
   }
 
+  async _selExam (ex) {
+    const page = await this.brower.pageMain()
+
+    await page
+      .locator('li[role="menuitem"]')
+      .filter({ hasText: '在线学习' })
+      .locator('li[role="menuitem"]')
+      .filter({ hasText: '我的考试' })
+      .click()
+    await this.brower.wait(1000)
+
+    const yearTabs = await page
+      .locator('div[class="yearTabs el-tabs el-tabs--card el-tabs--top"]')
+      .getByRole('tab')
+      .all()
+
+    for (const yearTab of yearTabs) {
+      await yearTab.click()
+      await this.brower.wait(2000)
+
+      // 获取课程
+      const crs = await page.locator('div[class="test-list-item"]').all()
+      for (const cr of crs) {
+        const text = await cr.locator('p[class="title"]').innerText()
+        const tab = await yearTab.innerText()
+        if (ex.text == text && ex.tab == tab) {
+          // 点击 开始考试
+          await cr
+            .locator(
+              'button[class="el-button btn el-button--primary el-button--small"]'
+            )
+            .click()
+
+          await this.brower.wait(1000)
+
+          // 点击 确定 考试
+          await page
+            .locator('div[role="dialog"]')
+            .locator('button[type="button"]')
+            .filter({ hasText: '确定' })
+            .click()
+          return
+        }
+      }
+    }
+  }
+
+  async _beginExam (ex) {
+    const page = await this.brower.pageExam()
+    // 获取题目
+    const sections = await page.locator('div[class="checkOption"]').all()
+
+    for (const sec of sections) {
+      const type = await sec.locator('h3').innerText()
+      const ques = await sec.locator('div[class="question-title"]').all()
+
+      for (const que of ques) {
+        const text = await que.locator('span[class="show-text"]').innerText()
+
+        const obj = {
+          text,
+          type,
+          options: [],
+          optionsText: []
+        }
+
+        if (type == '单选题' || type == '判断题') {
+          obj.options = await que
+            .locator('div[role="radiogroup"]')
+            .locator('label[role="radio"]')
+            .all()
+
+          for (const opt of opts) {
+            obj.optionsText.push(
+              await opt.locator('span[class="el-radio__label"]').innerText()
+            )
+          }
+        } else if (type == '多选题') {
+          obj.options = await que
+            .locator('div[role="group"]')
+            .locator('label[class="el-checkbox checkbox-option"]')
+            .all()
+
+          for (const opt of opts) {
+            obj.optionsText.push(
+              await opt.locator('span[class="el-checkbox__label"]').innerText()
+            )
+          }
+        }
+
+        // 搜索结果,并选择答案,触发click事件
+
+        // console.log(obj)
+      }
+    }
+
+    // 提交按钮 btn btn-submit skin-btn-text
+    await page.locator('button[class="btn btn-submit skin-btn-text"]').click()
+  }
+
+  async _exam (ex) {
+    log.info(`开始考试:${ex.tab}-${ex.text}`)
+    await this._selExam(ex)
+    await this.brower.wait(2000)
+    await this._beginExam(ex)
+  }
+
   async course () {
     const finCrs = await this._finCourse()
     const netCrs = await this._netCourse().then(crs => {
@@ -326,6 +457,51 @@ class Provider {
     await this.learn(crs)
   }
 
+  async exam () {
+    const ems = []
+    const page = await this.brower.pageMain()
+
+    await page
+      .locator('li[role="menuitem"]')
+      .filter({ hasText: '在线学习' })
+      .locator('li[role="menuitem"]')
+      .filter({ hasText: '我的考试' })
+      .click()
+    await this.brower.wait(1000)
+
+    const yearTabs = await page
+      .locator('div[class="yearTabs el-tabs el-tabs--card el-tabs--top"]')
+      .getByRole('tab')
+      .all()
+
+    for (const yearTab of yearTabs) {
+      await yearTab.click()
+      await this.brower.wait(2000)
+
+      // 获取课程
+      const crs = await page.locator('div[class="test-list-item"]').all()
+      for (const cr of crs) {
+        const status = await cr
+          .locator(
+            'button[class="el-button btn el-button--primary el-button--small"]'
+          )
+          .innerText()
+
+        if (status == '开始考试' || status == '继续考试') {
+          ems.push({
+            text: await cr.locator('p[class="title"]').innerText(),
+            tab: await yearTab.innerText()
+          })
+        }
+      }
+    }
+
+    log.warn(`发现 ${ems.length} 课程需要考试`)
+    for (const ex of ems) {
+      await this._exam(ex)
+    }
+  }
+
   async run () {
     log.info('进入【贵州省专业技术人员继续教育平台】')
     await this.brower.init()
@@ -340,7 +516,8 @@ class Provider {
       await this.learn(crs)
     }
 
-    log.warn(`视频课程观看结束,即将开始考试答题`)
+    // log.warn(`视频课程观看结束,即将开始考试答题`)
+    // await this.exam()
   }
 }
 
